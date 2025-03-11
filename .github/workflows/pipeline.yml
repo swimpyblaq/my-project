@@ -1,4 +1,4 @@
-name: CI Pipeline
+name: CI/CD Pipeline for JSON Hello World
 
 on:
   push:
@@ -13,35 +13,47 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Build the Docker image
-        run: docker build . --file Dockerfile --tag swimpyblaq92/chima:latest
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
         run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
+      - name: Build and tag Docker image
+        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/json-hello-app:latest .
+
       - name: Push Docker image to Docker Hub
-        run: docker push swimpyblaq92/chima:latest
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/json-hello-app:latest
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
 
     steps:
-      - name: SSH into VM and Deploy
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+        shell: bash
+
+      - name: Deploy and restart container
         uses: appleboy/ssh-action@v0.1.10
         with:
-          host: ${{ secrets.VM_HOST }}     # Your VM's IP address
-          username: ${{ secrets.VM_USER }} # Your VM's SSH username
-          key: ${{ secrets.SSH_PRIVATE_KEY }} # Ensure this matches GitHub Secrets
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
           script: |
             echo "Pulling latest image..."
-            docker pull swimpyblaq92/chima:latest
+            docker pull ${{ secrets.DOCKER_USERNAME }}/json-hello-app:latest
             
             echo "Stopping existing container..."
-            docker stop hello_container || true
-            docker rm hello_container || true
+            docker stop json-container || true
+            docker rm json-container || true
             
             echo "Starting new container..."
-            docker run -d --name hello_container -p 80:80 swimpyblaq92/chima:latest
+            docker run -d --name json-container -p 8080:8080 ${{ secrets.DOCKER_USERNAME }}/json-hello-app:latest
