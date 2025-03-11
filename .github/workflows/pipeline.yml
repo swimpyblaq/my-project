@@ -13,13 +13,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Build the Docker image
         run: docker build . --file Dockerfile --tag swimpyblaq92/chima:latest
 
       - name: Log in to Docker Hub
+        if: env.DOCKER_USERNAME != '' && env.DOCKER_PASSWORD != ''
         run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Push Docker image to Docker Hub
         run: docker push swimpyblaq92/chima:latest
@@ -29,12 +34,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: SSH into VM and Deploy
+      - name: Set up SSH key
+        run: |
+          echo "Setting up SSH key..."
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" | tr -d '\r' > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          echo "Adding host to known_hosts..."
+          ssh-keyscan -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+        shell: bash
+
+      - name: Test SSH Connection
+        run: |
+          echo "Testing SSH connection..."
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} "echo 'SSH connection successful'"
+        shell: bash
+
+      - name: Deploy Container on VM
         uses: appleboy/ssh-action@v0.1.10
         with:
-          host: ${{ secrets.VM_HOST }}     # Your VM's IP address
-          username: ${{ secrets.VM_USER }} # Your VM's SSH username
-          key: ${{ secrets.SSH_PRIVATE_KEY }} # Ensure this matches GitHub Secrets
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             echo "Pulling latest image..."
             docker pull swimpyblaq92/chima:latest
